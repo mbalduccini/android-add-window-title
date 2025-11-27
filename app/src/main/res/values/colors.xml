@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="accent_blue">#57A7FF</color>
+    <color name="accent_blue_dark">#3E63F2</color>
+    <color name="deep_navy_dark">#0B0F1C</color>
+    <color name="surface_card">#12172E</color>
+    <color name="caption_default_bg">#FFFFFFFF</color>
+</resources>

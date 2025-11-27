@@ -1,0 +1,22 @@
+# Gradle
+.gradle/
+/build/
+**/build/
+local.properties
+
+# IDE
+.idea/
+*.iml
+.DS_Store
+
+# Android/outputs
+*.apk
+*.aar
+*.aab
+*.log
+
+# Generated
+/app/.cxx/
+
+# Backup archives
+*.tgz
