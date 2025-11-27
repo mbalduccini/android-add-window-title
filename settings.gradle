@@ -16,3 +16,4 @@ dependencyResolutionManagement {
 
 rootProject.name = "CaptionBarDemo"
 include(":app")
+include(":captionlib")

@@ -4,6 +4,7 @@ import android.os.Bundle
 import android.view.View
 import android.widget.TextView
 import androidx.activity.ComponentActivity
+import androidx.core.view.ViewCompat
 import com.example.captionbardemo.caption.CaptionBarUtils
 import com.example.captionbardemo.caption.CaptionBarUtils.CaptionDebug
 
@@ -33,12 +34,15 @@ class MainActivity : ComponentActivity() {
             debugInsets.text = "captionTop=${info.captionTop}px statusTop=${info.statusTop}px height=${info.captionHeightPx}px"
             debugDrawable.text = "drawable start=${info.drawableStartPx}px end=${info.drawableEndPx}px width=${info.drawableEndPx - info.drawableStartPx}px (headerWidth=${info.headerWidthPx}px)"
             // Push main content below the caption bar.
-            findViewById<View>(R.id.main_container)?.setPadding(
-                0,
-                info.captionHeightPx + dp(12),
-                0,
-                0,
-            )
+            findViewById<View>(R.id.main_container)?.let { container ->
+                ViewCompat.setPaddingRelative(
+                    container,
+                    container.paddingStart,
+                    info.captionHeightPx + dp(12),
+                    container.paddingEnd,
+                    container.paddingBottom,
+                )
+            }
         }
     }
 

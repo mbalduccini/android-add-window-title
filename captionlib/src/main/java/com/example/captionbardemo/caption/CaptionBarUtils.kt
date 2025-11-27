@@ -4,20 +4,19 @@ import android.graphics.Rect
 import android.graphics.drawable.GradientDrawable
 import android.util.Log
 import android.util.TypedValue
+import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
 import android.view.Window
 import android.view.WindowInsetsController
-import android.widget.TextView
 import android.widget.FrameLayout
-import android.view.Gravity
+import android.widget.TextView
 import androidx.core.graphics.Insets
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.doOnLayout
 import androidx.core.view.updateLayoutParams
 import androidx.core.view.updateMargins
-import com.example.captionbardemo.R
 
 object CaptionBarUtils {
     data class CaptionDebug(
@@ -40,35 +39,6 @@ object CaptionBarUtils {
         }
     }
 
-    /**
-     * Make the system caption bar transparent when supported (Android 15+). Runs after the decor view
-     * is ready; reports the result via [onResult].
-     */
-    fun applyTransparentCaptionBar(window: Window, decorView: View, onResult: (String) -> Unit = {}) {
-        decorView.post {
-            val controller = window.insetsController
-            val status = if (controller != null) {
-                runCatching {
-                    controller.setSystemBarsAppearance(
-                        WindowInsetsController.APPEARANCE_TRANSPARENT_CAPTION_BAR_BACKGROUND,
-                        WindowInsetsController.APPEARANCE_TRANSPARENT_CAPTION_BAR_BACKGROUND,
-                    )
-                    "Transparent caption applied (platform controller)"
-                }.getOrElse { ex ->
-                    "Transparent caption failed: ${ex.javaClass.simpleName}"
-                }
-            } else {
-                "No insets controller; cannot set transparent caption"
-            }
-            Log.d("CaptionBarUtils", status)
-            onResult(status)
-        }
-    }
-
-    /**
-     * Bind a view-based caption bar: measures caption insets/rects, computes drawable span, and
-     * positions the title TextView accordingly.
-     */
     fun setWindowTitle(
         window: Window,
         titleText: String,
@@ -163,6 +133,31 @@ object CaptionBarUtils {
         }
         header.requestApplyInsets()
         return binding
+    }
+
+    /**
+     * Make the system caption bar transparent when supported (Android 15+). Runs after the decor view
+     * is ready; reports the result via [onResult].
+     */
+    fun applyTransparentCaptionBar(window: Window, decorView: View, onResult: (String) -> Unit = {}) {
+        decorView.post {
+            val controller = window.insetsController
+            val status = if (controller != null) {
+                runCatching {
+                    controller.setSystemBarsAppearance(
+                        WindowInsetsController.APPEARANCE_TRANSPARENT_CAPTION_BAR_BACKGROUND,
+                        WindowInsetsController.APPEARANCE_TRANSPARENT_CAPTION_BAR_BACKGROUND,
+                    )
+                    "Transparent caption applied (platform controller)"
+                }.getOrElse { ex ->
+                    "Transparent caption failed: ${ex.javaClass.simpleName}"
+                }
+            } else {
+                "No insets controller; cannot set transparent caption"
+            }
+            Log.d("CaptionBarUtils", status)
+            onResult(status)
+        }
     }
 
     private fun dpToPx(view: View, dp: Float): Int =
