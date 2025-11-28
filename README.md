@@ -4,7 +4,9 @@ This repo contains a small utility (`captionlib`) that lets you set a custom tit
 
 ## Modules
 - `captionlib`: reusable library with the `CaptionBarUtils` helper.
-- `app`, `simpledemo`, `titledemo`: sample apps; `titledemo` shows changing the title at runtime.
+- `debugdemo`: debug/demo app showing insets/rects; includes optional debug listener usage.
+- `simpledemo`: minimal “Hello World” layout with a fixed title.
+- `titledemo`: button that changes the caption title from “Original Title” to “Modified Title”.
 
 ## Add to your project
 1. Copy the `captionlib` module into your project (or add this repo as a submodule).
