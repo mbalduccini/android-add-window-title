@@ -5,8 +5,8 @@ import android.view.View
 import android.widget.TextView
 import androidx.activity.ComponentActivity
 import androidx.core.view.ViewCompat
-import com.example.captionbardemo.caption.CaptionBarUtils
-import com.example.captionbardemo.caption.CaptionBarUtils.CaptionDebug
+import net.asklab.caption.CaptionBarUtils
+import net.asklab.caption.CaptionBarUtils.CaptionDebug
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {

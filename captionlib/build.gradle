@@ -4,7 +4,7 @@ plugins {
 }
 
 android {
-    namespace "com.example.captionbardemo.caption"
+    namespace "net.asklab.caption"
     compileSdk 35
 
     defaultConfig {

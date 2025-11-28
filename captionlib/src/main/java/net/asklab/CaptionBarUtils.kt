@@ -1,4 +1,4 @@
-package com.example.captionbardemo.caption
+package net.asklab.caption
 
 import android.graphics.Rect
 import android.graphics.drawable.GradientDrawable

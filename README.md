@@ -23,7 +23,7 @@ This repo contains a small utility (`captionlib`) that lets you set a custom tit
 ## Usage
 In your `Activity`:
 ```kotlin
-import com.example.captionbardemo.caption.CaptionBarUtils
+import net.asklab.caption.CaptionBarUtils
 
 override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
@@ -52,4 +52,4 @@ Notes:
 - `simpledemo`: centered circle + “Hello World!” with a caption title.
 - `titledemo`: button that changes the caption title from “Original Title” to “Modified Title”.
 
-Build all demos: `./gradlew assembleDebug` (APK outputs under each module’s `build/outputs/apk`). ***
+Build all demos: `./gradlew assembleDebug` (APK outputs under each module’s `build/outputs/apk`).
