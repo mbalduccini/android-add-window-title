@@ -51,6 +51,7 @@ Notes:
 - The library creates and overlays the caption header view for you; no extra layout wiring is needed.
 
 ## Demos
+- `debugdemo`: shows caption insets/rects and how to listen to debug info while offsetting content.
 - `simpledemo`: centered circle + “Hello World!” with a caption title.
 - `titledemo`: button that changes the caption title from “Original Title” to “Modified Title”.
 

@@ -4,11 +4,11 @@ plugins {
 }
 
 android {
-    namespace "com.example.debugdemo"
+    namespace "net.asklab.debugdemo"
     compileSdk 35
 
     defaultConfig {
-        applicationId "com.example.debugdemo"
+        applicationId "net.asklab.debugdemo"
         minSdk 26
         targetSdk 35
         versionCode 1

@@ -1,4 +1,4 @@
-package com.example.debugdemo
+package net.asklab.debugdemo
 
 import android.os.Bundle
 import android.view.View

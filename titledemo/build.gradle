@@ -4,11 +4,11 @@ plugins {
 }
 
 android {
-    namespace "com.example.titledemo"
+    namespace "net.asklab.titledemo"
     compileSdk 35
 
     defaultConfig {
-        applicationId "com.example.titledemo"
+        applicationId "net.asklab.titledemo"
         minSdk 26
         targetSdk 35
         versionCode 1
