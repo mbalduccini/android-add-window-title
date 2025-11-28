@@ -29,13 +29,19 @@ object CaptionBarUtils {
         val headerWidthPx: Int,
     )
 
-    class CaptionBarBinding internal constructor() {
+    class CaptionBarBinding internal constructor(
+        private val titleView: TextView,
+    ) {
         private val debugListeners = mutableListOf<(CaptionDebug) -> Unit>()
         internal fun dispatch(debug: CaptionDebug) {
             debugListeners.forEach { it(debug) }
         }
         fun addDebugListener(listener: (CaptionDebug) -> Unit) {
             debugListeners.add(listener)
+        }
+
+        fun setTitle(text: String) {
+            titleView.text = text
         }
     }
 
@@ -77,7 +83,7 @@ object CaptionBarUtils {
         val gradient = GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, colors)
         header.background = gradient
 
-        val binding = CaptionBarBinding()
+        val binding = CaptionBarBinding(titleView)
         titleView.text = titleText
 
         // Border + optional fill for the drawable box.
