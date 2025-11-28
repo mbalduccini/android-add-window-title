@@ -4,11 +4,11 @@ plugins {
 }
 
 android {
-    namespace "com.example.captionbardemo"
+    namespace "com.example.debugdemo"
     compileSdk 35
 
     defaultConfig {
-        applicationId "com.example.captionbardemo"
+        applicationId "com.example.debugdemo"
         minSdk 26
         targetSdk 35
         versionCode 1

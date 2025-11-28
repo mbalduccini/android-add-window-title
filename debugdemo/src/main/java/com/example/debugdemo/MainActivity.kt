@@ -1,4 +1,4 @@
-package com.example.captionbardemo
+package com.example.debugdemo
 
 import android.os.Bundle
 import android.view.View
