@@ -1,0 +1,4 @@
+<resources>
+    <string name="app_name">TitleDemo</string>
+    <string name="change_title">Click to change the title</string>
+</resources>

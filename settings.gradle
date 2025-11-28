@@ -18,3 +18,4 @@ rootProject.name = "CaptionBarDemo"
 include(":app")
 include(":captionlib")
 include(":simpledemo")
+include(":titledemo")
