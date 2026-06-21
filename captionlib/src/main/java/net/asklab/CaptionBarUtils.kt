@@ -3,15 +3,19 @@ package net.asklab.caption
 import android.content.Context
 import android.graphics.Canvas
 import android.graphics.Paint
+import android.graphics.PixelFormat
 import android.graphics.Rect
 import android.graphics.drawable.GradientDrawable
+import android.os.Build
 import android.util.Log
 import android.util.TypedValue
 import android.view.Gravity
+import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
 import android.view.Window
 import android.view.WindowInsetsController
+import android.view.WindowManager
 import android.widget.FrameLayout
 import android.widget.TextView
 import androidx.core.graphics.Insets
@@ -61,6 +65,10 @@ object CaptionBarUtils {
             titleView.setTextColor(color)
             actionButton?.setDotColor(color)
         }
+
+        fun handleActionTouch(event: MotionEvent): Boolean {
+            return actionButton?.handleRawTouch(event) ?: false
+        }
     }
 
     fun setWindowTitle(
@@ -73,9 +81,9 @@ object CaptionBarUtils {
         onActionClick: (() -> Unit)? = null,
         onTransparentStatus: (String) -> Unit = {},
     ): CaptionBarBinding {
-        val content = window.decorView.findViewById<ViewGroup>(android.R.id.content)
-        val context = content.context
-        val header = FrameLayout(context).apply { tag = "caption_bar_container" }
+        val decor = window.decorView as ViewGroup
+        val context = decor.context
+        val header = CaptionHeader(context).apply { tag = "caption_bar_container" }
         val titleView = TextView(context).apply {
             setTextColor(titleTextColor)
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 18f)
@@ -98,6 +106,7 @@ object CaptionBarUtils {
                 onActionClick?.invoke()
             }
         }
+        header.actionButton = actionButton
         header.addView(
             actionButton,
             FrameLayout.LayoutParams(
@@ -106,13 +115,41 @@ object CaptionBarUtils {
                 Gravity.TOP or Gravity.START,
             ),
         )
-        val headerParams = FrameLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT,
-            ViewGroup.LayoutParams.WRAP_CONTENT,
-            Gravity.TOP,
-        )
-        content.addView(header, headerParams)
-        header.bringToFront()
+        decor.post {
+            if (header.parent != null) return@post
+            val params = WindowManager.LayoutParams(
+                WindowManager.LayoutParams.MATCH_PARENT,
+                WindowManager.LayoutParams.WRAP_CONTENT,
+                WindowManager.LayoutParams.TYPE_APPLICATION_PANEL,
+                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
+                PixelFormat.TRANSLUCENT,
+            ).apply {
+                token = decor.windowToken
+                gravity = Gravity.TOP or Gravity.START
+                title = "CaptionBarActionPanel"
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                    setFitInsetsTypes(0)
+                }
+            }
+            runCatching {
+                window.windowManager.addView(header, params)
+                header.bringToFront()
+                header.requestApplyInsets()
+                Log.d("CaptionBarUtils", "caption panel attached fitInsetsTypes=0")
+            }.onFailure { ex ->
+                Log.e("CaptionBarUtils", "caption panel attach failed", ex)
+                decor.addView(
+                    header,
+                    FrameLayout.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT,
+                        ViewGroup.LayoutParams.WRAP_CONTENT,
+                        Gravity.TOP,
+                    ),
+                )
+                header.bringToFront()
+                header.requestApplyInsets()
+            }
+        }
 
         val bgColor = captionColor ?: context.getColor(R.color.caption_default_bg)
         val colors = intArrayOf(bgColor, bgColor)
@@ -133,9 +170,15 @@ object CaptionBarUtils {
         }
 
         ViewCompat.setOnApplyWindowInsetsListener(header) { _, insets ->
-            val captionInsets = insets.getInsets(WindowInsetsCompat.Type.captionBar())
-            val statusInsets = insets.getInsets(WindowInsetsCompat.Type.statusBars())
-            val captionRects = boundingRects(insets)
+            val headerCaptionRects = boundingRects(insets)
+            val sourceInsets = if (headerCaptionRects.isEmpty()) {
+                ViewCompat.getRootWindowInsets(decor) ?: insets
+            } else {
+                insets
+            }
+            val captionInsets = sourceInsets.getInsets(WindowInsetsCompat.Type.captionBar())
+            val statusInsets = sourceInsets.getInsets(WindowInsetsCompat.Type.statusBars())
+            val captionRects = boundingRects(sourceInsets)
 
             val rectBottomPx = captionRects.maxOfOrNull { it.bottom } ?: 0
             val insetTopPx = maxOf(captionInsets.top, statusInsets.top, rectBottomPx)
@@ -185,7 +228,9 @@ object CaptionBarUtils {
 
             insets
         }
-        header.requestApplyInsets()
+        if (header.parent != null) {
+            header.requestApplyInsets()
+        }
         return binding
     }
 
@@ -258,6 +303,17 @@ object CaptionBarUtils {
         }.getOrElse { emptyList() }
     }
 
+    internal class CaptionHeader(context: Context) : FrameLayout(context) {
+        var actionButton: CaptionActionButton? = null
+
+        override fun dispatchTouchEvent(event: MotionEvent): Boolean {
+            if (actionButton?.handleRawTouch(event) == true) {
+                return true
+            }
+            return super.dispatchTouchEvent(event)
+        }
+    }
+
     internal class CaptionActionButton(context: Context, dotColor: Int) : View(context) {
         private val dotPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = dotColor
@@ -283,6 +339,47 @@ object CaptionBarUtils {
         fun setDotColor(color: Int) {
             dotPaint.color = color
             invalidate()
+        }
+
+        fun handleRawTouch(event: MotionEvent): Boolean {
+            if (visibility != View.VISIBLE || !isShown || !isEnabled) return false
+            val loc = IntArray(2)
+            getLocationOnScreen(loc)
+            val inside = event.rawX >= loc[0] &&
+                    event.rawX <= loc[0] + width &&
+                    event.rawY >= loc[1] &&
+                    event.rawY <= loc[1] + height
+            if (event.actionMasked == MotionEvent.ACTION_DOWN || event.actionMasked == MotionEvent.ACTION_UP) {
+                Log.d(
+                    "CaptionBarUtils",
+                    "action touch action=${event.actionMasked} raw=${event.rawX.toInt()},${event.rawY.toInt()} bounds=${loc[0]},${loc[1]},${loc[0] + width},${loc[1] + height} inside=$inside pressed=$isPressed",
+                )
+            }
+            if (!inside && !isPressed) return false
+            return when (event.actionMasked) {
+                MotionEvent.ACTION_DOWN -> {
+                    isPressed = true
+                    true
+                }
+                MotionEvent.ACTION_UP -> {
+                    val wasPressed = isPressed
+                    isPressed = false
+                    if (inside && wasPressed) {
+                        performClick()
+                    }
+                    true
+                }
+                MotionEvent.ACTION_CANCEL -> {
+                    isPressed = false
+                    true
+                }
+                else -> isPressed
+            }
+        }
+
+        override fun performClick(): Boolean {
+            super.performClick()
+            return true
         }
     }
 
