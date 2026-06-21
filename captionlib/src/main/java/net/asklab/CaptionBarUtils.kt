@@ -5,6 +5,8 @@ import android.graphics.Canvas
 import android.graphics.Paint
 import android.graphics.PixelFormat
 import android.graphics.Rect
+import android.graphics.Region
+import android.graphics.RegionIterator
 import android.graphics.drawable.GradientDrawable
 import android.os.Build
 import android.util.Log
@@ -199,15 +201,23 @@ object CaptionBarUtils {
 
             header.doOnLayout { v ->
                 val headerWidthPx = v.width
-                val (startPx, legacyEndPx) = findDrawableArea(headerWidthPx, captionRects)
-                val actionWidthPx = if (actionButton.visibility == View.VISIBLE) captionHeightPx else 0
-                val actionStartPx = legacyEndPx
+                val drawableArea = findDrawableArea(
+                    Rect(0, 0, headerWidthPx, captionHeightPx),
+                    captionRects,
+                )
+                val actionWidthPx = if (actionButton.visibility == View.VISIBLE) {
+                    minOf(captionHeightPx, drawableArea.width()).coerceAtLeast(0)
+                } else {
+                    0
+                }
+                val actionStartPx = drawableArea.right - actionWidthPx
                 titleView.updateLayoutParams<ViewGroup.MarginLayoutParams> {
-                    width = (legacyEndPx - startPx).coerceAtLeast(0)
-                    updateMargins(left = startPx)
+                    width = (actionStartPx - drawableArea.left).coerceAtLeast(0)
+                    height = drawableArea.height().coerceAtLeast(0)
+                    updateMargins(left = drawableArea.left, top = drawableArea.top)
                 }
                 actionButton.updateLayoutParams<ViewGroup.MarginLayoutParams> {
-                    updateMargins(left = actionStartPx)
+                    updateMargins(left = actionStartPx, top = drawableArea.top)
                 }
                 binding.dispatch(
                     CaptionDebug(
@@ -215,14 +225,14 @@ object CaptionBarUtils {
                         statusTop = statusInsets.top,
                         captionHeightPx = captionHeightPx,
                         captionRects = captionRects,
-                        drawableStartPx = startPx,
-                        drawableEndPx = legacyEndPx,
+                        drawableStartPx = drawableArea.left,
+                        drawableEndPx = drawableArea.right,
                         headerWidthPx = headerWidthPx,
                     ),
                 )
                 Log.d(
                     "CaptionBarUtils",
-                    "caption layout header=$headerWidthPx start=$startPx drawableEnd=$legacyEndPx actionStart=$actionStartPx actionEnd=${actionStartPx + actionWidthPx} actionWidth=$actionWidthPx rects=$captionRects",
+                    "caption layout header=$headerWidthPx drawable=$drawableArea actionStart=$actionStartPx actionEnd=${actionStartPx + actionWidthPx} actionWidth=$actionWidthPx rects=$captionRects",
                 )
             }
 
@@ -263,35 +273,27 @@ object CaptionBarUtils {
         TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, dp, view.resources.displayMetrics).toInt()
 
     /**
-     * Compute widest drawable span after subtracting stay-away rects from the header width.
+     * Compute the widest drawable rect after subtracting stay-away rects from the caption area.
      */
-    fun findDrawableArea(headerWidthPx: Int, captionRects: List<Rect>): Pair<Int, Int> {
-        if (headerWidthPx <= 0) return 0 to 0
-        val sorted = captionRects.sortedBy { it.left }
-        val merged = mutableListOf<Rect>()
-        for (r in sorted) {
-            if (merged.isEmpty()) {
-                merged.add(Rect(r))
-            } else {
-                val last = merged.last()
-                if (r.left <= last.right) {
-                    last.right = maxOf(last.right, r.right)
-                    last.top = minOf(last.top, r.top)
-                    last.bottom = maxOf(last.bottom, r.bottom)
-                } else {
-                    merged.add(Rect(r))
-                }
+    fun findDrawableArea(captionArea: Rect, captionRects: List<Rect>): Rect {
+        if (captionArea.isEmpty) return Rect()
+        if (captionRects.isEmpty()) return Rect(captionArea)
+
+        val region = Region(captionArea)
+        captionRects.forEach { rect ->
+            region.op(rect, Region.Op.DIFFERENCE)
+        }
+        if (region.isEmpty) return Rect()
+
+        val widest = Rect()
+        val iterator = RegionIterator(region)
+        val rect = Rect()
+        while (iterator.next(rect)) {
+            if (rect.width() > widest.width()) {
+                widest.set(rect)
             }
         }
-        val segments = mutableListOf<Pair<Int, Int>>()
-        var cursor = 0
-        merged.forEach { rect ->
-            if (rect.left > cursor) segments.add(cursor to rect.left)
-            cursor = maxOf(cursor, rect.right)
-        }
-        if (cursor < headerWidthPx) segments.add(cursor to headerWidthPx)
-        if (segments.isEmpty()) return 0 to headerWidthPx
-        return segments.maxByOrNull { it.second - it.first } ?: (0 to headerWidthPx)
+        return widest
     }
 
     private fun boundingRects(insets: WindowInsetsCompat): List<Rect> {
