@@ -1,5 +1,8 @@
 package net.asklab.caption
 
+import android.content.Context
+import android.graphics.Canvas
+import android.graphics.Paint
 import android.graphics.Rect
 import android.graphics.drawable.GradientDrawable
 import android.util.Log
@@ -31,6 +34,9 @@ object CaptionBarUtils {
 
     class CaptionBarBinding internal constructor(
         private val titleView: TextView,
+        private val actionButton: CaptionActionButton?,
+        private val activeTextColor: Int,
+        private val inactiveTextColor: Int,
     ) {
         private val debugListeners = mutableListOf<(CaptionDebug) -> Unit>()
         internal fun dispatch(debug: CaptionDebug) {
@@ -43,6 +49,18 @@ object CaptionBarUtils {
         fun setTitle(text: String) {
             titleView.text = text
         }
+
+        fun setActionClickListener(listener: (() -> Unit)?) {
+            actionButton?.setOnClickListener {
+                listener?.invoke()
+            }
+        }
+
+        fun setActive(active: Boolean) {
+            val color = if (active) activeTextColor else inactiveTextColor
+            titleView.setTextColor(color)
+            actionButton?.setDotColor(color)
+        }
     }
 
     fun setWindowTitle(
@@ -50,6 +68,9 @@ object CaptionBarUtils {
         titleText: String,
         captionColor: Int? = null,
         titleTextColor: Int = 0xFFFFFFFF.toInt(),
+        inactiveTitleTextColor: Int = applyAlpha(titleTextColor, 0.45f),
+        actionContentDescription: String? = null,
+        onActionClick: (() -> Unit)? = null,
         onTransparentStatus: (String) -> Unit = {},
     ): CaptionBarBinding {
         val content = window.decorView.findViewById<ViewGroup>(android.R.id.content)
@@ -70,6 +91,21 @@ object CaptionBarUtils {
                 Gravity.START or Gravity.CENTER_VERTICAL,
             ),
         )
+        val actionButton = CaptionActionButton(context, titleTextColor).apply {
+            visibility = if (onActionClick == null) View.GONE else View.VISIBLE
+            contentDescription = actionContentDescription
+            setOnClickListener {
+                onActionClick?.invoke()
+            }
+        }
+        header.addView(
+            actionButton,
+            FrameLayout.LayoutParams(
+                dpToPx(header, 40f),
+                dpToPx(header, 40f),
+                Gravity.TOP or Gravity.START,
+            ),
+        )
         val headerParams = FrameLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT,
             ViewGroup.LayoutParams.WRAP_CONTENT,
@@ -83,7 +119,7 @@ object CaptionBarUtils {
         val gradient = GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, colors)
         header.background = gradient
 
-        val binding = CaptionBarBinding(titleView)
+        val binding = CaptionBarBinding(titleView, actionButton, titleTextColor, inactiveTitleTextColor)
         titleView.text = titleText
 
         // Border + optional fill for the drawable box.
@@ -113,14 +149,22 @@ object CaptionBarUtils {
             titleView.updateLayoutParams<ViewGroup.MarginLayoutParams> {
                 height = captionHeightPx
             }
+            actionButton.updateLayoutParams<ViewGroup.MarginLayoutParams> {
+                width = captionHeightPx
+                height = captionHeightPx
+            }
 
             header.doOnLayout { v ->
                 val headerWidthPx = v.width
-                val (startPx, endPx) = findDrawableArea(headerWidthPx, captionRects)
-                val widthPx = (endPx - startPx).coerceAtLeast(0)
+                val (startPx, legacyEndPx) = findDrawableArea(headerWidthPx, captionRects)
+                val actionWidthPx = if (actionButton.visibility == View.VISIBLE) captionHeightPx else 0
+                val actionStartPx = legacyEndPx
                 titleView.updateLayoutParams<ViewGroup.MarginLayoutParams> {
-                    width = widthPx
+                    width = (legacyEndPx - startPx).coerceAtLeast(0)
                     updateMargins(left = startPx)
+                }
+                actionButton.updateLayoutParams<ViewGroup.MarginLayoutParams> {
+                    updateMargins(left = actionStartPx)
                 }
                 binding.dispatch(
                     CaptionDebug(
@@ -129,9 +173,13 @@ object CaptionBarUtils {
                         captionHeightPx = captionHeightPx,
                         captionRects = captionRects,
                         drawableStartPx = startPx,
-                        drawableEndPx = endPx,
+                        drawableEndPx = legacyEndPx,
                         headerWidthPx = headerWidthPx,
                     ),
+                )
+                Log.d(
+                    "CaptionBarUtils",
+                    "caption layout header=$headerWidthPx start=$startPx drawableEnd=$legacyEndPx actionStart=$actionStartPx actionEnd=${actionStartPx + actionWidthPx} actionWidth=$actionWidthPx rects=$captionRects",
                 )
             }
 
@@ -208,5 +256,44 @@ object CaptionBarUtils {
             @Suppress("UNCHECKED_CAST")
             (method.invoke(platform, android.view.WindowInsets.Type.captionBar()) as? List<Rect>).orEmpty()
         }.getOrElse { emptyList() }
+    }
+
+    internal class CaptionActionButton(context: Context, dotColor: Int) : View(context) {
+        private val dotPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = dotColor
+        }
+
+        init {
+            isClickable = true
+            isFocusable = true
+            background = selectableItemBackgroundBorderless(context)
+        }
+
+        override fun onDraw(canvas: Canvas) {
+            super.onDraw(canvas)
+            val centerY = height / 2f
+            val radius = minOf(width, height) / 16f
+            val spacing = radius * 3f
+            val centerX = width / 2f
+            canvas.drawCircle(centerX - spacing, centerY, radius, dotPaint)
+            canvas.drawCircle(centerX, centerY, radius, dotPaint)
+            canvas.drawCircle(centerX + spacing, centerY, radius, dotPaint)
+        }
+
+        fun setDotColor(color: Int) {
+            dotPaint.color = color
+            invalidate()
+        }
+    }
+
+    private fun selectableItemBackgroundBorderless(context: Context) =
+        TypedValue().let { outValue ->
+            context.theme.resolveAttribute(android.R.attr.selectableItemBackgroundBorderless, outValue, true)
+            context.getDrawable(outValue.resourceId)
+        }
+
+    private fun applyAlpha(color: Int, alpha: Float): Int {
+        val alphaInt = (((color ushr 24) and 0xFF) * alpha).toInt().coerceIn(0, 255)
+        return (color and 0x00FFFFFF) or (alphaInt shl 24)
     }
 }
