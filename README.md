@@ -33,7 +33,7 @@ override fun onCreate(savedInstanceState: Bundle?) {
     val binding = CaptionBarUtils.setWindowTitle(
         window = window,
         titleText = "My Window Title",
-        captionColor = getColor(android.R.color.white),   // background + box color
+        useChromeCaptionBackground = true,                // full-width Chrome-style gray
         titleTextColor = getColor(android.R.color.black), // text color
     )
 
@@ -47,7 +47,8 @@ override fun onCreate(savedInstanceState: Bundle?) {
 
 Notes:
 - `setWindowTitle` automatically applies a transparent caption bar (Android 15+).
-- `captionColor` is used for both the bar background and the title box; omit to use the default white.
+- `useChromeCaptionBackground = true` paints the full caption area with Chrome's light gray.
+- Leave `useChromeCaptionBackground` false and pass `captionColor` to keep the previous title-box style.
 - The library creates and overlays the caption header view for you; no extra layout wiring is needed.
 
 ## Demos

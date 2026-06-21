@@ -77,6 +77,7 @@ object CaptionBarUtils {
         window: Window,
         titleText: String,
         captionColor: Int? = null,
+        useChromeCaptionBackground: Boolean = false,
         titleTextColor: Int = 0xFFFFFFFF.toInt(),
         inactiveTitleTextColor: Int = applyAlpha(titleTextColor, 0.45f),
         actionContentDescription: String? = null,
@@ -153,7 +154,11 @@ object CaptionBarUtils {
             }
         }
 
-        val bgColor = captionColor ?: context.getColor(R.color.caption_default_bg)
+        val bgColor = when {
+            captionColor != null -> captionColor
+            useChromeCaptionBackground -> context.getColor(R.color.caption_chrome_bg)
+            else -> context.getColor(R.color.caption_default_bg)
+        }
         val colors = intArrayOf(bgColor, bgColor)
         val gradient = GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, colors)
         header.background = gradient
@@ -161,10 +166,13 @@ object CaptionBarUtils {
         val binding = CaptionBarBinding(titleView, actionButton, titleTextColor, inactiveTitleTextColor)
         titleView.text = titleText
 
-        // Border + optional fill for the drawable box.
-        val stroke = GradientDrawable().apply {
-            setStroke(1, 0x99FFFFFF.toInt())
-            captionColor?.let { setColor(it) }
+        val titleBackground = if (useChromeCaptionBackground) {
+            null
+        } else {
+            GradientDrawable().apply {
+                setStroke(1, 0x99FFFFFF.toInt())
+                captionColor?.let { setColor(it) }
+            }
         }
 
         applyTransparentCaptionBar(window, window.decorView) { status ->
@@ -190,7 +198,7 @@ object CaptionBarUtils {
             header.updateLayoutParams<ViewGroup.LayoutParams> {
                 height = captionHeightPx
             }
-            titleView.background = stroke
+            titleView.background = titleBackground
             titleView.updateLayoutParams<ViewGroup.MarginLayoutParams> {
                 height = captionHeightPx
             }
@@ -332,10 +340,10 @@ object CaptionBarUtils {
             val centerY = height / 2f
             val radius = minOf(width, height) / 16f
             val spacing = radius * 3f
-            val centerX = width / 2f
-            canvas.drawCircle(centerX - spacing, centerY, radius, dotPaint)
-            canvas.drawCircle(centerX, centerY, radius, dotPaint)
-            canvas.drawCircle(centerX + spacing, centerY, radius, dotPaint)
+            val rightDotCenterX = width - (radius * 3f)
+            canvas.drawCircle(rightDotCenterX - (spacing * 2f), centerY, radius, dotPaint)
+            canvas.drawCircle(rightDotCenterX - spacing, centerY, radius, dotPaint)
+            canvas.drawCircle(rightDotCenterX, centerY, radius, dotPaint)
         }
 
         fun setDotColor(color: Int) {
