@@ -325,7 +325,8 @@ object CaptionBarUtils {
 
         init {
             isClickable = true
-            isFocusable = true
+            isFocusable = false
+            isFocusableInTouchMode = false
             background = selectableItemBackgroundBorderless(context)
         }
 
