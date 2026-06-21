@@ -34,6 +34,7 @@ override fun onCreate(savedInstanceState: Bundle?) {
         window = window,
         titleText = "My Window Title",
         useChromeCaptionBackground = true,                // full-width Chrome-style gray
+        placeActionAfterDrawableArea = false,             // keep action inside the safe area
         titleTextColor = getColor(android.R.color.black), // text color
     )
 
@@ -49,6 +50,7 @@ Notes:
 - `setWindowTitle` automatically applies a transparent caption bar (Android 15+).
 - `useChromeCaptionBackground = true` paints the full caption area with Chrome's light gray.
 - Leave `useChromeCaptionBackground` false and pass `captionColor` to keep the previous title-box style.
+- `placeActionAfterDrawableArea = true` is experimental; it places the action button just beyond the reported drawable title area.
 - The library creates and overlays the caption header view for you; no extra layout wiring is needed.
 
 ## Demos

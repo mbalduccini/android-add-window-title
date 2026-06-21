@@ -78,6 +78,7 @@ object CaptionBarUtils {
         titleText: String,
         captionColor: Int? = null,
         useChromeCaptionBackground: Boolean = false,
+        placeActionAfterDrawableArea: Boolean = false,
         titleTextColor: Int = 0xFFFFFFFF.toInt(),
         inactiveTitleTextColor: Int = applyAlpha(titleTextColor, 0.45f),
         actionContentDescription: String? = null,
@@ -214,11 +215,19 @@ object CaptionBarUtils {
                     captionRects,
                 )
                 val actionWidthPx = if (actionButton.visibility == View.VISIBLE) {
-                    minOf(captionHeightPx, drawableArea.width()).coerceAtLeast(0)
+                    if (placeActionAfterDrawableArea) {
+                        captionHeightPx
+                    } else {
+                        minOf(captionHeightPx, drawableArea.width()).coerceAtLeast(0)
+                    }
                 } else {
                     0
                 }
-                val actionStartPx = drawableArea.right - actionWidthPx
+                val actionStartPx = if (placeActionAfterDrawableArea && actionWidthPx > 0) {
+                    drawableArea.right
+                } else {
+                    drawableArea.right - actionWidthPx
+                }
                 titleView.updateLayoutParams<ViewGroup.MarginLayoutParams> {
                     width = (actionStartPx - drawableArea.left).coerceAtLeast(0)
                     height = drawableArea.height().coerceAtLeast(0)
