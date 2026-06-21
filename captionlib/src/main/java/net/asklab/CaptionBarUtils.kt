@@ -39,12 +39,14 @@ object CaptionBarUtils {
     )
 
     class CaptionBarBinding internal constructor(
+        private val header: ViewGroup,
         private val titleView: TextView,
         private val actionButton: CaptionActionButton?,
         private val activeTextColor: Int,
         private val inactiveTextColor: Int,
     ) {
         private val debugListeners = mutableListOf<(CaptionDebug) -> Unit>()
+        private var lastActionExclusionRect: Rect? = null
         internal fun dispatch(debug: CaptionDebug) {
             debugListeners.forEach { it(debug) }
         }
@@ -69,7 +71,47 @@ object CaptionBarUtils {
         }
 
         fun handleActionTouch(event: MotionEvent): Boolean {
-            return actionButton?.handleRawTouch(event) ?: false
+            return actionButton?.handleRawTouch(event, lastActionExclusionRect) ?: false
+        }
+
+        fun refreshActionTarget() {
+            header.post {
+                ViewCompat.requestApplyInsets(header)
+                updateActionExclusionFromCurrentBounds("refresh")
+            }
+        }
+
+        internal fun setActionExclusionRect(rect: Rect, reason: String) {
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return
+            lastActionExclusionRect = Rect(rect)
+            header.systemGestureExclusionRects = listOf(Rect(rect))
+            Log.d("CaptionBarUtils", "caption action exclusion=$rect reason=$reason")
+        }
+
+        internal fun clearActionExclusionRect() {
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return
+            lastActionExclusionRect = null
+            header.systemGestureExclusionRects = emptyList()
+        }
+
+        private fun updateActionExclusionFromCurrentBounds(reason: String) {
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return
+            val button = actionButton ?: return clearActionExclusionRect()
+            val rect = if (
+                button.visibility == View.VISIBLE &&
+                button.isShown &&
+                button.width > 0 &&
+                button.height > 0
+            ) {
+                button.touchRectInParent ?: Rect(button.left, button.top, button.right, button.bottom)
+            } else {
+                lastActionExclusionRect
+            }
+            if (rect != null && !rect.isEmpty) {
+                setActionExclusionRect(rect, reason)
+            } else {
+                clearActionExclusionRect()
+            }
         }
     }
 
@@ -147,7 +189,7 @@ object CaptionBarUtils {
         val gradient = GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, colors)
         header.background = gradient
 
-        val binding = CaptionBarBinding(titleView, actionButton, titleTextColor, inactiveTitleTextColor)
+        val binding = CaptionBarBinding(header, titleView, actionButton, titleTextColor, inactiveTitleTextColor)
         titleView.text = titleText
 
         val titleBackground = if (useChromeCaptionBackground) {
@@ -172,9 +214,9 @@ object CaptionBarUtils {
             }
             val captionInsets = sourceInsets.getInsets(WindowInsetsCompat.Type.captionBar())
             val statusInsets = sourceInsets.getInsets(WindowInsetsCompat.Type.statusBars())
-            val captionRects = boundingRects(sourceInsets)
+            val rawCaptionRects = boundingRects(sourceInsets)
 
-            val rectBottomPx = captionRects.maxOfOrNull { it.bottom } ?: 0
+            val rectBottomPx = rawCaptionRects.maxOfOrNull { it.bottom } ?: 0
             val insetTopPx = maxOf(captionInsets.top, statusInsets.top, rectBottomPx)
             val captionHeightPx = if (insetTopPx > 0) insetTopPx else dpToPx(header, 40f)
 
@@ -190,6 +232,7 @@ object CaptionBarUtils {
 
             header.doOnLayout { v ->
                 val headerWidthPx = v.width
+                val captionRects = correctStartAndEndRects(rawCaptionRects, headerWidthPx)
                 val drawableArea = findDrawableArea(
                     Rect(0, 0, headerWidthPx, captionHeightPx),
                     captionRects,
@@ -219,16 +262,24 @@ object CaptionBarUtils {
                     updateMargins(left = actionStartPx, top = drawableArea.top)
                 }
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && actionWidthPx > 0) {
+                    val minTouchWidthPx = dpToPx(header, 48f)
+                    val extraTouchPx = ((minTouchWidthPx - actionWidthPx).coerceAtLeast(0)) / 2
+                    val touchRightLimit = if (placeActionAfterDrawableArea) {
+                        headerWidthPx
+                    } else {
+                        drawableArea.right
+                    }
                     val actionExclusionRect = Rect(
-                        actionStartPx,
+                        (actionStartPx - extraTouchPx).coerceAtLeast(drawableArea.left),
                         drawableArea.top,
-                        actionStartPx + actionWidthPx,
+                        (actionStartPx + actionWidthPx + extraTouchPx).coerceAtMost(touchRightLimit),
                         drawableArea.top + captionHeightPx,
                     )
-                    header.systemGestureExclusionRects = listOf(actionExclusionRect)
-                    Log.d("CaptionBarUtils", "caption action exclusion=$actionExclusionRect")
+                    actionButton.touchRectInParent = Rect(actionExclusionRect)
+                    binding.setActionExclusionRect(actionExclusionRect, "layout")
                 } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                    header.systemGestureExclusionRects = emptyList()
+                    actionButton.touchRectInParent = null
+                    binding.clearActionExclusionRect()
                 }
                 binding.dispatch(
                     CaptionDebug(
@@ -313,7 +364,27 @@ object CaptionBarUtils {
             val method = platform.javaClass.getMethod("getBoundingRects", Int::class.javaPrimitiveType)
             @Suppress("UNCHECKED_CAST")
             (method.invoke(platform, android.view.WindowInsets.Type.captionBar()) as? List<Rect>).orEmpty()
+                .map { Rect(it) }
         }.getOrElse { emptyList() }
+    }
+
+    private fun correctStartAndEndRects(rects: List<Rect>, frameWidthPx: Int): List<Rect> {
+        if (rects.isEmpty() || frameWidthPx <= 0) return rects
+        val corrected = rects.map { Rect(it) }.toMutableList()
+        val thresholdPx = frameWidthPx * 0.1f
+
+        corrected.minByOrNull { it.left }?.let { startRect ->
+            if (startRect.left <= thresholdPx) {
+                startRect.left = 0
+            }
+        }
+
+        corrected.maxByOrNull { it.right }?.let { endRect ->
+            if (endRect.right != frameWidthPx && kotlin.math.abs(endRect.right - frameWidthPx) <= thresholdPx) {
+                endRect.right = frameWidthPx
+            }
+        }
+        return corrected
     }
 
     internal class CaptionActionButton(context: Context, iconColor: Int) : View(context) {
@@ -322,6 +393,8 @@ object CaptionBarUtils {
             style = Paint.Style.FILL
         }
         private val iconPath = Path()
+        internal var touchRectInParent: Rect? = null
+        private var clickedOnDown = false
 
         init {
             isClickable = true
@@ -361,43 +434,118 @@ object CaptionBarUtils {
             return super.onHoverEvent(event)
         }
 
-        fun handleRawTouch(event: MotionEvent): Boolean {
+        override fun onTouchEvent(event: MotionEvent): Boolean {
             if (visibility != View.VISIBLE || !isShown || !isEnabled) return false
-            val loc = IntArray(2)
-            getLocationOnScreen(loc)
-            val inside = event.rawX >= loc[0] &&
-                    event.rawX <= loc[0] + width &&
-                    event.rawY >= loc[1] &&
-                    event.rawY <= loc[1] + height
-            if (event.actionMasked == MotionEvent.ACTION_DOWN || event.actionMasked == MotionEvent.ACTION_UP) {
+            val inside = isRawEventInsideTouchRect(event)
+            if (event.actionMasked == MotionEvent.ACTION_DOWN ||
+                event.actionMasked == MotionEvent.ACTION_UP ||
+                event.actionMasked == MotionEvent.ACTION_CANCEL
+            ) {
                 Log.d(
                     "CaptionBarUtils",
-                    "action touch action=${event.actionMasked} raw=${event.rawX.toInt()},${event.rawY.toInt()} bounds=${loc[0]},${loc[1]},${loc[0] + width},${loc[1] + height} inside=$inside pressed=$isPressed",
+                    "action view touch action=${event.actionMasked} source=${event.source} tool=${event.getToolType(0)} buttons=${event.buttonState} raw=${event.rawX.toInt()},${event.rawY.toInt()} inside=$inside pressed=$isPressed",
+                )
+            }
+            return when (event.actionMasked) {
+                MotionEvent.ACTION_DOWN -> {
+                    if (!inside) return false
+                    isPressed = true
+                    clickedOnDown = true
+                    performClick()
+                    true
+                }
+                MotionEvent.ACTION_UP -> {
+                    val wasPressed = isPressed
+                    isPressed = false
+                    if (inside && wasPressed && !clickedOnDown) {
+                        performClick()
+                    }
+                    clickedOnDown = false
+                    true
+                }
+                MotionEvent.ACTION_CANCEL -> {
+                    isPressed = false
+                    clickedOnDown = false
+                    true
+                }
+                else -> {
+                    if (!inside && isPressed) {
+                        isPressed = false
+                    }
+                    true
+                }
+            }
+        }
+
+        fun handleRawTouch(event: MotionEvent, touchRectInParent: Rect?): Boolean {
+            if (visibility != View.VISIBLE || !isShown || !isEnabled) return false
+            val bounds = rawTouchBounds(touchRectInParent)
+            val inside = event.rawX >= bounds.left &&
+                    event.rawX <= bounds.right &&
+                    event.rawY >= bounds.top &&
+                    event.rawY <= bounds.bottom
+            if (event.actionMasked == MotionEvent.ACTION_DOWN || event.actionMasked == MotionEvent.ACTION_UP) {
+                val loc = IntArray(2)
+                getLocationOnScreen(loc)
+                Log.d(
+                    "CaptionBarUtils",
+                    "action touch action=${event.actionMasked} source=${event.source} tool=${event.getToolType(0)} raw=${event.rawX.toInt()},${event.rawY.toInt()} viewBounds=${loc[0]},${loc[1]},${loc[0] + width},${loc[1] + height} touchBounds=${bounds.left},${bounds.top},${bounds.right},${bounds.bottom} inside=$inside pressed=$isPressed",
                 )
             }
             if (!inside && !isPressed) return false
             return when (event.actionMasked) {
                 MotionEvent.ACTION_DOWN -> {
                     isPressed = true
+                    clickedOnDown = true
+                    performClick()
                     true
                 }
                 MotionEvent.ACTION_UP -> {
                     val wasPressed = isPressed
                     isPressed = false
-                    if (inside && wasPressed) {
+                    if (inside && wasPressed && !clickedOnDown) {
                         performClick()
                     }
+                    clickedOnDown = false
                     true
                 }
                 MotionEvent.ACTION_CANCEL -> {
                     isPressed = false
+                    clickedOnDown = false
                     true
                 }
                 else -> isPressed
             }
         }
 
+        private fun isRawEventInsideTouchRect(event: MotionEvent): Boolean {
+            val bounds = rawTouchBounds(touchRectInParent)
+            return event.rawX >= bounds.left &&
+                    event.rawX <= bounds.right &&
+                    event.rawY >= bounds.top &&
+                    event.rawY <= bounds.bottom
+        }
+
+        private fun rawTouchBounds(touchRectInParent: Rect?): Rect {
+            val parentLoc = IntArray(2)
+            val parentView = parent as? View
+            if (parentView != null) {
+                parentView.getLocationOnScreen(parentLoc)
+            } else {
+                getLocationOnScreen(parentLoc)
+                return Rect(parentLoc[0], parentLoc[1], parentLoc[0] + width, parentLoc[1] + height)
+            }
+            val rect = touchRectInParent ?: Rect(left, top, right, bottom)
+            return Rect(
+                parentLoc[0] + rect.left,
+                parentLoc[1] + rect.top,
+                parentLoc[0] + rect.right,
+                parentLoc[1] + rect.bottom,
+            )
+        }
+
         override fun performClick(): Boolean {
+            Log.d("CaptionBarUtils", "action performClick")
             super.performClick()
             return true
         }
