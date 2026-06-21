@@ -3,7 +3,7 @@ package net.asklab.caption
 import android.content.Context
 import android.graphics.Canvas
 import android.graphics.Paint
-import android.graphics.PixelFormat
+import android.graphics.Path
 import android.graphics.Rect
 import android.graphics.Region
 import android.graphics.RegionIterator
@@ -17,11 +17,11 @@ import android.view.View
 import android.view.ViewGroup
 import android.view.Window
 import android.view.WindowInsetsController
-import android.view.WindowManager
 import android.widget.FrameLayout
 import android.widget.TextView
 import androidx.core.graphics.Insets
 import androidx.core.view.ViewCompat
+import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.doOnLayout
 import androidx.core.view.updateLayoutParams
@@ -87,7 +87,7 @@ object CaptionBarUtils {
     ): CaptionBarBinding {
         val decor = window.decorView as ViewGroup
         val context = decor.context
-        val header = CaptionHeader(context).apply { tag = "caption_bar_container" }
+        val header = FrameLayout(context).apply { tag = "caption_bar_container" }
         val titleView = TextView(context).apply {
             setTextColor(titleTextColor)
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 18f)
@@ -110,38 +110,18 @@ object CaptionBarUtils {
                 onActionClick?.invoke()
             }
         }
-        header.actionButton = actionButton
         header.addView(
             actionButton,
             FrameLayout.LayoutParams(
-                dpToPx(header, 40f),
+                dpToPx(header, 32f),
                 dpToPx(header, 40f),
                 Gravity.TOP or Gravity.START,
             ),
         )
+        WindowCompat.setDecorFitsSystemWindows(window, false)
         decor.post {
             if (header.parent != null) return@post
-            val params = WindowManager.LayoutParams(
-                WindowManager.LayoutParams.MATCH_PARENT,
-                WindowManager.LayoutParams.WRAP_CONTENT,
-                WindowManager.LayoutParams.TYPE_APPLICATION_PANEL,
-                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
-                PixelFormat.TRANSLUCENT,
-            ).apply {
-                token = decor.windowToken
-                gravity = Gravity.TOP or Gravity.START
-                title = "CaptionBarActionPanel"
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                    setFitInsetsTypes(0)
-                }
-            }
             runCatching {
-                window.windowManager.addView(header, params)
-                header.bringToFront()
-                header.requestApplyInsets()
-                Log.d("CaptionBarUtils", "caption panel attached fitInsetsTypes=0")
-            }.onFailure { ex ->
-                Log.e("CaptionBarUtils", "caption panel attach failed", ex)
                 decor.addView(
                     header,
                     FrameLayout.LayoutParams(
@@ -152,6 +132,9 @@ object CaptionBarUtils {
                 )
                 header.bringToFront()
                 header.requestApplyInsets()
+                Log.d("CaptionBarUtils", "caption visual layer attached to decor")
+            }.onFailure { ex ->
+                Log.e("CaptionBarUtils", "caption visual layer attach failed", ex)
             }
         }
 
@@ -203,10 +186,7 @@ object CaptionBarUtils {
             titleView.updateLayoutParams<ViewGroup.MarginLayoutParams> {
                 height = captionHeightPx
             }
-            actionButton.updateLayoutParams<ViewGroup.MarginLayoutParams> {
-                width = captionHeightPx
-                height = captionHeightPx
-            }
+            val buttonWidthPx = minOf(captionHeightPx, dpToPx(header, 32f))
 
             header.doOnLayout { v ->
                 val headerWidthPx = v.width
@@ -216,9 +196,9 @@ object CaptionBarUtils {
                 )
                 val actionWidthPx = if (actionButton.visibility == View.VISIBLE) {
                     if (placeActionAfterDrawableArea) {
-                        captionHeightPx
+                        buttonWidthPx
                     } else {
-                        minOf(captionHeightPx, drawableArea.width()).coerceAtLeast(0)
+                        minOf(buttonWidthPx, drawableArea.width()).coerceAtLeast(0)
                     }
                 } else {
                     0
@@ -234,7 +214,21 @@ object CaptionBarUtils {
                     updateMargins(left = drawableArea.left, top = drawableArea.top)
                 }
                 actionButton.updateLayoutParams<ViewGroup.MarginLayoutParams> {
+                    width = buttonWidthPx
+                    height = captionHeightPx
                     updateMargins(left = actionStartPx, top = drawableArea.top)
+                }
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && actionWidthPx > 0) {
+                    val actionExclusionRect = Rect(
+                        actionStartPx,
+                        drawableArea.top,
+                        actionStartPx + actionWidthPx,
+                        drawableArea.top + captionHeightPx,
+                    )
+                    header.systemGestureExclusionRects = listOf(actionExclusionRect)
+                    Log.d("CaptionBarUtils", "caption action exclusion=$actionExclusionRect")
+                } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    header.systemGestureExclusionRects = emptyList()
                 }
                 binding.dispatch(
                     CaptionDebug(
@@ -322,21 +316,12 @@ object CaptionBarUtils {
         }.getOrElse { emptyList() }
     }
 
-    internal class CaptionHeader(context: Context) : FrameLayout(context) {
-        var actionButton: CaptionActionButton? = null
-
-        override fun dispatchTouchEvent(event: MotionEvent): Boolean {
-            if (actionButton?.handleRawTouch(event) == true) {
-                return true
-            }
-            return super.dispatchTouchEvent(event)
+    internal class CaptionActionButton(context: Context, iconColor: Int) : View(context) {
+        private val iconPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = iconColor
+            style = Paint.Style.FILL
         }
-    }
-
-    internal class CaptionActionButton(context: Context, dotColor: Int) : View(context) {
-        private val dotPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = dotColor
-        }
+        private val iconPath = Path()
 
         init {
             isClickable = true
@@ -346,18 +331,33 @@ object CaptionBarUtils {
 
         override fun onDraw(canvas: Canvas) {
             super.onDraw(canvas)
+            val centerX = width / 2f
             val centerY = height / 2f
-            val radius = minOf(width, height) / 16f
-            val spacing = radius * 3f
-            val rightDotCenterX = width - (radius * 3f)
-            canvas.drawCircle(rightDotCenterX - (spacing * 2f), centerY, radius, dotPaint)
-            canvas.drawCircle(rightDotCenterX - spacing, centerY, radius, dotPaint)
-            canvas.drawCircle(rightDotCenterX, centerY, radius, dotPaint)
+            val triangleWidth = minOf(width * 0.34f, height * 0.18f)
+            val triangleHeight = triangleWidth * 0.62f
+            iconPath.reset()
+            iconPath.moveTo(centerX - triangleWidth / 2f, centerY - triangleHeight / 2f)
+            iconPath.lineTo(centerX + triangleWidth / 2f, centerY - triangleHeight / 2f)
+            iconPath.lineTo(centerX, centerY + triangleHeight / 2f)
+            iconPath.close()
+            canvas.drawPath(iconPath, iconPaint)
         }
 
         fun setDotColor(color: Int) {
-            dotPaint.color = color
+            iconPaint.color = color
             invalidate()
+        }
+
+        override fun onHoverEvent(event: MotionEvent): Boolean {
+            if (event.actionMasked == MotionEvent.ACTION_HOVER_ENTER ||
+                event.actionMasked == MotionEvent.ACTION_HOVER_EXIT
+            ) {
+                Log.d(
+                    "CaptionBarUtils",
+                    "action hover action=${event.actionMasked} x=${event.x.toInt()} y=${event.y.toInt()} hovered=$isHovered",
+                )
+            }
+            return super.onHoverEvent(event)
         }
 
         fun handleRawTouch(event: MotionEvent): Boolean {
