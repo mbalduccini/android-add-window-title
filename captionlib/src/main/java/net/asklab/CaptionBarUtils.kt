@@ -58,9 +58,9 @@ object CaptionBarUtils {
             titleView.text = text
         }
 
-        fun setActionClickListener(listener: (() -> Unit)?) {
+        fun setActionClickListener(listener: ((View) -> Unit)?) {
             actionButton?.setOnClickListener {
-                listener?.invoke()
+                listener?.invoke(it)
             }
         }
 
@@ -124,7 +124,7 @@ object CaptionBarUtils {
         titleTextColor: Int = 0xFFFFFFFF.toInt(),
         inactiveTitleTextColor: Int = applyAlpha(titleTextColor, 0.45f),
         actionContentDescription: String? = null,
-        onActionClick: (() -> Unit)? = null,
+        onActionClick: ((View) -> Unit)? = null,
         onTransparentStatus: (String) -> Unit = {},
     ): CaptionBarBinding {
         val decor = window.decorView as ViewGroup
@@ -149,7 +149,7 @@ object CaptionBarUtils {
             visibility = if (onActionClick == null) View.GONE else View.VISIBLE
             contentDescription = actionContentDescription
             setOnClickListener {
-                onActionClick?.invoke()
+                onActionClick?.invoke(it)
             }
         }
         header.addView(
