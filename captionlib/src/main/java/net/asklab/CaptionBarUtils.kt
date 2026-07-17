@@ -9,6 +9,9 @@ import android.graphics.Region
 import android.graphics.RegionIterator
 import android.graphics.drawable.GradientDrawable
 import android.os.Build
+import android.text.Layout
+import android.text.StaticLayout
+import android.text.TextPaint
 import android.util.Log
 import android.util.TypedValue
 import android.view.Gravity
@@ -28,6 +31,9 @@ import androidx.core.view.updateLayoutParams
 import androidx.core.view.updateMargins
 
 object CaptionBarUtils {
+    private const val TITLE_TEXT_SP = 18f
+    private const val TITLE_TEXT_MIN_SP = 10f
+
     data class CaptionDebug(
         val captionTop: Int,
         val statusTop: Int,
@@ -44,6 +50,7 @@ object CaptionBarUtils {
         private val actionButton: CaptionActionButton?,
         private val activeTextColor: Int,
         private val inactiveTextColor: Int,
+        private val maxTitleLines: Int,
     ) {
         private val debugListeners = mutableListOf<(CaptionDebug) -> Unit>()
         private var lastActionExclusionRect: Rect? = null
@@ -56,6 +63,7 @@ object CaptionBarUtils {
 
         fun setTitle(text: String) {
             titleView.text = text
+            titleView.post { adjustTitleTextForCaption(titleView, maxTitleLines) }
         }
 
         fun setActionClickListener(listener: ((View) -> Unit)?) {
@@ -123,6 +131,7 @@ object CaptionBarUtils {
         placeActionAfterDrawableArea: Boolean = false,
         titleTextColor: Int = 0xFFFFFFFF.toInt(),
         inactiveTitleTextColor: Int = applyAlpha(titleTextColor, 0.45f),
+        maxTitleLines: Int = 2,
         actionContentDescription: String? = null,
         onActionClick: ((View) -> Unit)? = null,
         onTransparentStatus: (String) -> Unit = {},
@@ -132,8 +141,11 @@ object CaptionBarUtils {
         val header = FrameLayout(context).apply { tag = "caption_bar_container" }
         val titleView = TextView(context).apply {
             setTextColor(titleTextColor)
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 18f)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, TITLE_TEXT_SP)
             paint.isFakeBoldText = true
+            includeFontPadding = false
+            this.maxLines = maxTitleLines.coerceAtLeast(1)
+            setHorizontallyScrolling(false)
             setPadding(dpToPx(this, 6f), 0, dpToPx(this, 6f), 0)
             gravity = Gravity.CENTER_VERTICAL or Gravity.START
         }
@@ -189,7 +201,15 @@ object CaptionBarUtils {
         val gradient = GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, colors)
         header.background = gradient
 
-        val binding = CaptionBarBinding(header, titleView, actionButton, titleTextColor, inactiveTitleTextColor)
+        val resolvedMaxTitleLines = maxTitleLines.coerceAtLeast(1)
+        val binding = CaptionBarBinding(
+            header,
+            titleView,
+            actionButton,
+            titleTextColor,
+            inactiveTitleTextColor,
+            resolvedMaxTitleLines,
+        )
         titleView.text = titleText
 
         val titleBackground = if (useChromeCaptionBackground) {
@@ -256,6 +276,7 @@ object CaptionBarUtils {
                     height = drawableArea.height().coerceAtLeast(0)
                     updateMargins(left = drawableArea.left, top = drawableArea.top)
                 }
+                adjustTitleTextForCaption(titleView, resolvedMaxTitleLines)
                 actionButton.updateLayoutParams<ViewGroup.MarginLayoutParams> {
                     width = buttonWidthPx
                     height = captionHeightPx
@@ -306,6 +327,71 @@ object CaptionBarUtils {
         return binding
     }
 
+    private fun adjustTitleTextForCaption(titleView: TextView, maxTitleLines: Int) {
+        val availableWidth = titleView.width - titleView.paddingLeft - titleView.paddingRight
+        val availableHeight = titleView.height - titleView.paddingTop - titleView.paddingBottom
+        if (availableWidth <= 0 || availableHeight <= 0) return
+
+        val text = titleView.text ?: return
+        val resolvedMaxLines = maxTitleLines.coerceAtLeast(1)
+        titleView.maxLines = resolvedMaxLines
+        val defaultPx = spToPx(titleView, TITLE_TEXT_SP)
+        titleView.setTextSize(TypedValue.COMPLEX_UNIT_PX, defaultPx)
+
+        val defaultLayout = buildTitleLayout(titleView, text, availableWidth, defaultPx)
+        if (defaultLayout.lineCount <= 1) {
+            Log.d(
+                "CaptionBarUtils",
+                "title layout single line width=$availableWidth height=$availableHeight textPx=$defaultPx",
+            )
+            return
+        }
+
+        val minPx = spToPx(titleView, TITLE_TEXT_MIN_SP)
+        var low = minPx
+        var high = defaultPx
+        var best = minPx
+        while (low <= high) {
+            val mid = (low + high) / 2f
+            val layout = buildTitleLayout(titleView, text, availableWidth, mid)
+            val candidateHeight = firstLinesHeight(layout, resolvedMaxLines)
+            if (candidateHeight <= availableHeight) {
+                best = mid
+                low = mid + 0.25f
+            } else {
+                high = mid - 0.25f
+            }
+        }
+        titleView.setTextSize(TypedValue.COMPLEX_UNIT_PX, best)
+        titleView.maxLines = resolvedMaxLines
+        Log.d(
+            "CaptionBarUtils",
+            "title layout wrapped lines=${defaultLayout.lineCount} maxLines=$resolvedMaxLines width=$availableWidth height=$availableHeight textPx=$best",
+        )
+    }
+
+    private fun buildTitleLayout(
+        titleView: TextView,
+        text: CharSequence,
+        widthPx: Int,
+        textSizePx: Float,
+    ): StaticLayout {
+        val paint = TextPaint(titleView.paint).apply {
+            textSize = textSizePx
+        }
+        return StaticLayout.Builder.obtain(text, 0, text.length, paint, widthPx)
+            .setAlignment(Layout.Alignment.ALIGN_NORMAL)
+            .setIncludePad(false)
+            .setLineSpacing(titleView.lineSpacingExtra, titleView.lineSpacingMultiplier)
+            .build()
+    }
+
+    private fun firstLinesHeight(layout: StaticLayout, maxLines: Int): Int {
+        val lineCount = minOf(layout.lineCount, maxLines)
+        if (lineCount <= 0) return 0
+        return layout.getLineBottom(lineCount - 1) - layout.getLineTop(0)
+    }
+
     /**
      * Make the system caption bar transparent when supported (Android 15+). Runs after the decor view
      * is ready; reports the result via [onResult].
@@ -333,6 +419,9 @@ object CaptionBarUtils {
 
     private fun dpToPx(view: View, dp: Float): Int =
         TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, dp, view.resources.displayMetrics).toInt()
+
+    private fun spToPx(view: View, sp: Float): Float =
+        TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_SP, sp, view.resources.displayMetrics)
 
     /**
      * Compute the widest drawable rect after subtracting stay-away rects from the caption area.
