@@ -22,6 +22,7 @@ import android.view.Window
 import android.view.WindowInsetsController
 import android.widget.FrameLayout
 import android.widget.TextView
+import androidx.core.graphics.ColorUtils
 import androidx.core.graphics.Insets
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
@@ -221,7 +222,11 @@ object CaptionBarUtils {
             }
         }
 
-        applyTransparentCaptionBar(window, window.decorView) { status ->
+        applyTransparentCaptionBar(
+            window,
+            window.decorView,
+            lightCaptionBackground = ColorUtils.calculateLuminance(bgColor) > 0.5,
+        ) { status ->
             onTransparentStatus(status)
         }
 
@@ -393,19 +398,28 @@ object CaptionBarUtils {
     }
 
     /**
-     * Make the system caption bar transparent when supported (Android 15+). Runs after the decor view
-     * is ready; reports the result via [onResult].
+     * Make the system caption bar transparent and match its controls to the app-drawn background
+     * when supported (Android 15+). Runs after the decor view is ready.
      */
-    fun applyTransparentCaptionBar(window: Window, decorView: View, onResult: (String) -> Unit = {}) {
+    fun applyTransparentCaptionBar(
+        window: Window,
+        decorView: View,
+        lightCaptionBackground: Boolean = true,
+        onResult: (String) -> Unit = {},
+    ) {
         decorView.post {
             val controller = window.insetsController
             val status = if (controller != null) {
                 runCatching {
+                    val mask = WindowInsetsController.APPEARANCE_TRANSPARENT_CAPTION_BAR_BACKGROUND or
+                        WindowInsetsController.APPEARANCE_LIGHT_CAPTION_BARS
+                    val appearance = WindowInsetsController.APPEARANCE_TRANSPARENT_CAPTION_BAR_BACKGROUND or
+                        if (lightCaptionBackground) WindowInsetsController.APPEARANCE_LIGHT_CAPTION_BARS else 0
                     controller.setSystemBarsAppearance(
-                        WindowInsetsController.APPEARANCE_TRANSPARENT_CAPTION_BAR_BACKGROUND,
-                        WindowInsetsController.APPEARANCE_TRANSPARENT_CAPTION_BAR_BACKGROUND,
+                        appearance,
+                        mask,
                     )
-                    "Transparent caption applied (platform controller)"
+                    "Transparent caption applied (platform controller, lightBackground=$lightCaptionBackground)"
                 }.getOrElse { ex ->
                     "Transparent caption failed: ${ex.javaClass.simpleName}"
                 }
