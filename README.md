@@ -33,6 +33,7 @@ override fun onCreate(savedInstanceState: Bundle?) {
     val binding = CaptionBarUtils.setWindowTitle(
         window = window,
         titleText = "My Window Title",
+        titleIcon = getDrawable(R.drawable.my_window_icon), // optional per-window icon
         useChromeCaptionBackground = true,                // full-width Chrome-style gray
         placeActionAfterDrawableArea = false,             // keep action inside the safe area
         titleTextColor = getColor(android.R.color.black), // text color
@@ -40,6 +41,7 @@ override fun onCreate(savedInstanceState: Bundle?) {
 
     // Later, change the title dynamically:
     binding.setTitle("Updated Title")
+    binding.setIcon(getDrawable(R.drawable.another_icon)) // null removes the icon
 
     // (Optional) receive inset/rect info for debugging:
     // binding.addDebugListener { info -> /* use info.captionRects, etc. */ }
@@ -52,6 +54,7 @@ Notes:
 - Leave `useChromeCaptionBackground` false and pass `captionColor` to keep the previous title-box style.
 - `placeActionAfterDrawableArea = true` is experimental; it places the action button just beyond the reported drawable title area.
 - The library creates and overlays the caption header view for you; no extra layout wiring is needed.
+- The optional icon is aspect-fitted beside the title inside the drawable caption area. It does not change caption height and is hidden when there is too little room for the title and controls.
 
 ## Demos
 - `debugdemo`: shows caption insets/rects and how to listen to debug info while offsetting content.

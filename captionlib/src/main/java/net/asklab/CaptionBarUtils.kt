@@ -7,6 +7,7 @@ import android.graphics.Path
 import android.graphics.Rect
 import android.graphics.Region
 import android.graphics.RegionIterator
+import android.graphics.drawable.Drawable
 import android.graphics.drawable.GradientDrawable
 import android.os.Build
 import android.text.Layout
@@ -21,6 +22,7 @@ import android.view.ViewGroup
 import android.view.Window
 import android.view.WindowInsetsController
 import android.widget.FrameLayout
+import android.widget.ImageView
 import android.widget.TextView
 import androidx.core.graphics.ColorUtils
 import androidx.core.graphics.Insets
@@ -48,6 +50,7 @@ object CaptionBarUtils {
     class CaptionBarBinding internal constructor(
         private val header: ViewGroup,
         private val titleView: TextView,
+        private val iconView: ImageView,
         private val actionButton: CaptionActionButton?,
         private val activeTextColor: Int,
         private val inactiveTextColor: Int,
@@ -55,6 +58,7 @@ object CaptionBarUtils {
     ) {
         private val debugListeners = mutableListOf<(CaptionDebug) -> Unit>()
         private var lastActionExclusionRect: Rect? = null
+        private var titleArea: Rect? = null
         internal fun dispatch(debug: CaptionDebug) {
             debugListeners.forEach { it(debug) }
         }
@@ -67,6 +71,34 @@ object CaptionBarUtils {
             titleView.post { adjustTitleTextForCaption(titleView, maxTitleLines) }
         }
 
+        fun setIcon(icon: Drawable?) {
+            iconView.setImageDrawable(icon)
+            titleArea?.let { layoutTitleAndIcon(it) }
+        }
+
+        internal fun layoutTitleAndIcon(area: Rect) {
+            titleArea = Rect(area)
+            val iconSizePx = minOf(dpToPx(header, 24f), area.height()).coerceAtLeast(0)
+            val iconPaddingPx = dpToPx(header, 6f)
+            val showIcon = iconView.drawable != null && iconSizePx > 0 &&
+                area.width() >= iconPaddingPx + iconSizePx + dpToPx(header, 48f)
+            val iconSlotPx = if (showIcon) iconPaddingPx + iconSizePx else 0
+            iconView.visibility = if (showIcon) View.VISIBLE else View.GONE
+            iconView.updateLayoutParams<ViewGroup.MarginLayoutParams> {
+                width = iconSizePx
+                height = iconSizePx
+                updateMargins(
+                    left = area.left + iconPaddingPx,
+                    top = area.top + (area.height() - iconSizePx) / 2,
+                )
+            }
+            titleView.updateLayoutParams<ViewGroup.MarginLayoutParams> {
+                width = (area.width() - iconSlotPx).coerceAtLeast(0)
+                height = area.height().coerceAtLeast(0)
+                updateMargins(left = area.left + iconSlotPx, top = area.top)
+            }
+        }
+
         fun setActionClickListener(listener: ((View) -> Unit)?) {
             actionButton?.setOnClickListener {
                 listener?.invoke(it)
@@ -76,6 +108,7 @@ object CaptionBarUtils {
         fun setActive(active: Boolean) {
             val color = if (active) activeTextColor else inactiveTextColor
             titleView.setTextColor(color)
+            iconView.alpha = if (active) 1f else 0.45f
             actionButton?.setDotColor(color)
         }
 
@@ -135,11 +168,20 @@ object CaptionBarUtils {
         maxTitleLines: Int = 2,
         actionContentDescription: String? = null,
         onActionClick: ((View) -> Unit)? = null,
+        titleIcon: Drawable? = null,
         onTransparentStatus: (String) -> Unit = {},
     ): CaptionBarBinding {
         val decor = window.decorView as ViewGroup
         val context = decor.context
         val header = FrameLayout(context).apply { tag = "caption_bar_container" }
+        val iconView = ImageView(context).apply {
+            tag = "caption_bar_icon"
+            scaleType = ImageView.ScaleType.FIT_CENTER
+            importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+            setImageDrawable(titleIcon)
+            visibility = View.GONE
+        }
+        header.addView(iconView, FrameLayout.LayoutParams(0, 0, Gravity.TOP or Gravity.START))
         val titleView = TextView(context).apply {
             setTextColor(titleTextColor)
             setTextSize(TypedValue.COMPLEX_UNIT_SP, TITLE_TEXT_SP)
@@ -149,6 +191,11 @@ object CaptionBarUtils {
             setHorizontallyScrolling(false)
             setPadding(dpToPx(this, 6f), 0, dpToPx(this, 6f), 0)
             gravity = Gravity.CENTER_VERTICAL or Gravity.START
+        }
+        titleView.addOnLayoutChangeListener { _, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom ->
+            if (right - left != oldRight - oldLeft || bottom - top != oldBottom - oldTop) {
+                adjustTitleTextForCaption(titleView, maxTitleLines)
+            }
         }
         header.addView(
             titleView,
@@ -206,6 +253,7 @@ object CaptionBarUtils {
         val binding = CaptionBarBinding(
             header,
             titleView,
+            iconView,
             actionButton,
             titleTextColor,
             inactiveTitleTextColor,
@@ -276,11 +324,7 @@ object CaptionBarUtils {
                 } else {
                     drawableArea.right - actionWidthPx
                 }
-                titleView.updateLayoutParams<ViewGroup.MarginLayoutParams> {
-                    width = (actionStartPx - drawableArea.left).coerceAtLeast(0)
-                    height = drawableArea.height().coerceAtLeast(0)
-                    updateMargins(left = drawableArea.left, top = drawableArea.top)
-                }
+                binding.layoutTitleAndIcon(Rect(drawableArea.left, drawableArea.top, actionStartPx, drawableArea.bottom))
                 adjustTitleTextForCaption(titleView, resolvedMaxTitleLines)
                 actionButton.updateLayoutParams<ViewGroup.MarginLayoutParams> {
                     width = buttonWidthPx
